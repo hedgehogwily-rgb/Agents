@@ -1,5 +1,3 @@
-"""Shared state schemas for the LangGraph agent."""
-
 from __future__ import annotations
 
 from typing import Annotated, TypedDict
@@ -16,3 +14,5 @@ class AgentState(TypedDict):
     current_step: int
     max_steps: int
     final_answer: str | None
+    last_tool_name: str | None
+    last_observation: str | None

@@ -1,4 +1,4 @@
-"""Day 1 entrypoint: run the graph on a few sample goals."""
+"""Day 2 entrypoint: tool-using agent on sample goals."""
 
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SAMPLE_GOALS = [
-    "Сложи 15 и 27",
-    "Кратко объясни, что такое HTTP",
-    "Составь план изучения Python за неделю",
+    "Посчитай 15 + 27 через calculator",
+    "Прочитай файл examples/notes.txt и кратко скажи, о чём он",
+    "Найди в examples/notes.txt строки про LangGraph через text_search",
 ]
 
 
@@ -28,6 +28,8 @@ def run_goal(graph, goal: str, max_steps: int = DEFAULT_MAX_STEPS) -> dict:
             "current_step": 0,
             "max_steps": max_steps,
             "final_answer": None,
+            "last_tool_name": None,
+            "last_observation": None,
         }
     )
 
@@ -39,6 +41,8 @@ def main() -> None:
         result = run_goal(graph, goal)
         logger.info("%s", goal)
         logger.info("%s/%s", result["current_step"], result["max_steps"])
+        logger.info("%s", result.get("last_tool_name"))
+        logger.info("%s", result.get("last_observation"))
         logger.info("%s", result["final_answer"])
 
 

@@ -1,33 +1,27 @@
 🛠️ 🛠️ Agents
 
-📝 День 1: agents_day01
+📝 День 2: agents_day02
 
-День 1 — Каркас агента на LangGraph и базовый graph state
+День 2 — Tools через LangChain
 
 🎯 Цель дня
-Создать базовый graph-based agent skeleton на LangGraph, описать state и собрать минимальный execution flow.
+Научить агента использовать инструменты через современный tool abstraction в LangChain.
 
 📋 Задачи
-1. 🧱 Установить зависимости:
-   - langchain
-   - langgraph
-   - langsmith
-   - pydantic
-2. 📦 Описать базовый AgentState:
-   - goal
-   - messages / history
-   - current_step
-   - max_steps
-   - final_answer
-3. 🕸️ Собрать минимальный graph в LangGraph
-4. 🧠 Добавить первый узел, который получает goal и предлагает следующий action
-5. 🧪 Протестировать на 2–3 простых задачах
+1. 🛠️ Реализовать минимум 2 обязательных инструмента и 1 дополнительный, например:
+   - calculator
+   - read_local_file
+   - text_search (как дополнительный или упрощённый)
+2. 📐 Описать tool input/output через Pydantic
+3. 🔌 Подключить tools в LangChain-совместимом формате
+4. 🧪 Проверить, что агент умеет выбрать tool и получить observation
+5. 📝 Логировать tool calls и их результат
 
 🎉 Критерии успеха
-- ✅ LangGraph graph создаётся и запускается
-- ✅ Есть AgentState
-- ✅ Агент делает хотя бы один осмысленный шаг
-- ✅ Используется именно graph-based структура, а не просто один вызов модели
+- ✅ Есть минимум 2 рабочих tools и желательно 1 дополнительный
+- ✅ Tools оформлены современным способом
+- ✅ Агент реально вызывает инструменты
+- ✅ Observation возвращается обратно в graph execution
 
 ---
 Удачи с реализацией! 🚀

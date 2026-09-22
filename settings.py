@@ -15,7 +15,7 @@ OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 # Optional LangSmith tracing (enable later with LANGCHAIN_TRACING_V2=true)
 LANGCHAIN_TRACING_V2: str | None = os.getenv("LANGCHAIN_TRACING_V2")
 LANGCHAIN_API_KEY: str | None = os.getenv("LANGCHAIN_API_KEY")
-LANGCHAIN_PROJECT: str = os.getenv("LANGCHAIN_PROJECT", "agents-day01")
+LANGCHAIN_PROJECT: str = os.getenv("LANGCHAIN_PROJECT", "agents-day02")
 
 DEFAULT_MAX_STEPS: int = int(os.getenv("DEFAULT_MAX_STEPS", "5"))
 

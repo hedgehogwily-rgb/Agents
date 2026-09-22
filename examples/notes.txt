@@ -1,0 +1,5 @@
+Python basics
+HTTP is an application protocol for the web.
+Use a calculator for exact arithmetic: 15 + 27 = ?
+LangGraph orchestrates agents as graphs with shared state.
+Tool calling lets the model request calculator or file tools.
