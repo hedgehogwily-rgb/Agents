@@ -93,9 +93,11 @@ def _resolve_safe_path(path: str) -> Path:
 
 
 def _log_tool(name: str, payload: dict, result: str) -> str:
+    observation = ToolObservation(tool_name=name, result=result)
+    serialized = observation.model_dump_json()
     logger.info("%s %s", name, payload)
-    logger.info("%s %s", name, result)
-    return result
+    logger.info("%s %s", name, serialized)
+    return serialized
 
 
 # --- tools ------------------------------------------------------------------

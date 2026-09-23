@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 import prompts
 from schemas import AgentState
 from settings import get_llm
-from tools import TOOLS
+from tools import TOOLS, ToolObservation
 
 logger = logging.getLogger(__name__)
 
@@ -53,15 +53,11 @@ def observe_node(state: AgentState) -> dict:
         return {}
 
     last = tool_messages[-1]
-    observation = last.content if isinstance(last.content, str) else str(last.content)
-    tool_name = getattr(last, "name", None) or "unknown"
 
-    logger.info("%s", tool_name)
-    logger.info("%s", observation)
-
+    parsed = ToolObservation.model_validate_json(last.content)
     return {
-        "last_tool_name": tool_name,
-        "last_observation": observation,
+        "last_tool_name": parsed.tool_name,
+        "last_observation": parsed.model_dump_json(),
     }
 
 
