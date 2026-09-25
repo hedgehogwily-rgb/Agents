@@ -15,27 +15,30 @@ logger = logging.getLogger(__name__)
 
 
 def _llm_with_tools():
-    return get_llm().bind_tools(TOOLS)
+    return get_llm().bind_tools(TOOLS, parallel_tool_calls=False)
 
 
-def agent_node(state: AgentState) -> dict:
-    """Call the LLM (with tools bound). May emit tool_calls or a final answer."""
-    history = list(state["messages"])
-    system = SystemMessage(content=prompts.AGENT_SYSTEM)
+def actor_node(state: AgentState) -> dict:
+    system = SystemMessage(content=prompts.ACTOR_SYSTEM.format(
+        plan=state["plan"],
+        last_observation=state["last_observation"],
+    ))
 
-    if not history:
-        human = HumanMessage(content=state["goal"])
-        response = _llm_with_tools().invoke([system, human])
-        update: dict = {
-            "messages": [human, response],
-            "current_step": state["current_step"] + 1,
-        }
+    response = _llm_with_tools().invoke([system, *state["messages"]])
+
+    if response.tool_calls:
+        action = "; ".join(
+            f"{call['name']} {call['args']}" for call in response.tool_calls
+        )
     else:
-        response = _llm_with_tools().invoke([system, *history])
-        update = {
-            "messages": [response],
-            "current_step": state["current_step"] + 1,
-        }
+        content = response.content
+        action = content.strip() if isinstance(content, str) else str(content)
+        
+    update = {
+        "messages": [response],
+        "current_step": state["current_step"] + 1,
+        "trace": state["trace"] + [f"action: {action}"],
+    }
 
     if not getattr(response, "tool_calls", None):
         content = response.content
@@ -47,17 +50,34 @@ def agent_node(state: AgentState) -> dict:
 
 
 def observe_node(state: AgentState) -> dict:
-    """Pull the latest ToolMessage into state as observation (back into the graph)."""
-    tool_messages = [m for m in state["messages"] if isinstance(m, ToolMessage)]
+    """Pull new ToolMessages into state as observations (back into the graph)."""
+    messages = state["messages"]
+    last_ai_index = None
+    for index, message in enumerate(messages):
+        if isinstance(message, AIMessage):
+            last_ai_index = index
+    if last_ai_index is None:
+        return {}
+
+    tool_messages = [
+        message
+        for message in messages[last_ai_index + 1 :]
+        if isinstance(message, ToolMessage)
+    ]
     if not tool_messages:
         return {}
 
-    last = tool_messages[-1]
+    trace = list(state["trace"])
+    parsed = None
+    for message in tool_messages:
+        content = message.content if isinstance(message.content, str) else str(message.content)
+        parsed = ToolObservation.model_validate_json(content)
+        trace.append(f"observation: {parsed.tool_name}: {parsed.result}")
 
-    parsed = ToolObservation.model_validate_json(last.content)
     return {
         "last_tool_name": parsed.tool_name,
         "last_observation": parsed.model_dump_json(),
+        "trace": trace,
     }
 
 
@@ -70,3 +90,17 @@ def should_continue(state: AgentState) -> str:
     if isinstance(last, AIMessage) and last.tool_calls:
         return "tools"
     return "end"
+
+
+def planner_node(state: AgentState) -> dict:
+    response = get_llm().invoke([
+        SystemMessage(content=prompts.PLANNER_SYSTEM),
+        HumanMessage(content=state["goal"]),
+    ])
+    plan_content = response.content
+    plan = plan_content.strip() if isinstance(plan_content, str) else str(plan_content).strip()
+    return {
+        "plan": plan,
+        "messages": [HumanMessage(content=state["goal"])],
+        "trace": [f"plan: {plan}"],
+    }

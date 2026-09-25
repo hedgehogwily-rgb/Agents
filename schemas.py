@@ -16,3 +16,5 @@ class AgentState(TypedDict):
     final_answer: str | None
     last_tool_name: str | None
     last_observation: str | None
+    plan: str | None
+    trace: list[str]
