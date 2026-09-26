@@ -31,6 +31,10 @@ def run_goal(graph, goal: str, max_steps: int = DEFAULT_MAX_STEPS) -> dict:
             "last_observation": None,
             "plan": None,
             "trace": [],
+            "observations": [],
+            "tool_results": [],
+            "notes": [],
+            "done_criteria": [],
         }
     )
 
@@ -46,6 +50,10 @@ def main() -> None:
         logger.info("%s", result.get("last_observation"))
         logger.info("%s", result["final_answer"])
         logger.info("%s", result["plan"])
+        logger.info("%s", result["observations"])
+        logger.info("%s", result["tool_results"])
+        logger.info("%s", result["notes"])
+        logger.info("%s", result["done_criteria"])
         for step in result["trace"]:
             logger.info("%s", step)
 

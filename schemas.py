@@ -18,3 +18,7 @@ class AgentState(TypedDict):
     last_observation: str | None
     plan: str | None
     trace: list[str]
+    observations: list[str]
+    tool_results: list[str]
+    notes: list[str]
+    done_criteria: list[str]

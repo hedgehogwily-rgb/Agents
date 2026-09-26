@@ -18,18 +18,45 @@ def _llm_with_tools():
     return get_llm().bind_tools(TOOLS, parallel_tool_calls=False)
 
 
+def _call_signature(name: str, args: dict) -> str:
+    return f"{name} {args}"
+
+
+def _is_successful_repeat(signature: str, tool_results: list[str]) -> bool:
+    prefix = signature + " =>"
+    for record in tool_results:
+        if not record.startswith(prefix):
+            continue
+        result = record.split("=>", 1)[1].strip()
+        if not result.startswith("error"):
+            return True
+    return False
+
+
 def actor_node(state: AgentState) -> dict:
     system = SystemMessage(content=prompts.ACTOR_SYSTEM.format(
         plan=state["plan"],
         last_observation=state["last_observation"],
+        done_criteria=state["done_criteria"],
+        notes=state["notes"],
+        tool_results=state["tool_results"],
     ))
 
     response = _llm_with_tools().invoke([system, *state["messages"]])
 
     if response.tool_calls:
-        action = "; ".join(
-            f"{call['name']} {call['args']}" for call in response.tool_calls
-        )
+        call = response.tool_calls[0]
+        signature = _call_signature(call["name"], call["args"])
+        if _is_successful_repeat(signature, state["tool_results"]):
+            response = AIMessage(
+                content=(
+                    "Этот вызов уже есть в notes. Ответь по сохранённым фактам: "
+                    + " | ".join(state["notes"])
+                )
+            )
+            action = response.content
+        else:
+            action = signature
     else:
         content = response.content
         action = content.strip() if isinstance(content, str) else str(content)
@@ -69,12 +96,35 @@ def observe_node(state: AgentState) -> dict:
 
     trace = list(state["trace"])
     parsed = None
+    tool_results = list(state["tool_results"])
+    observations = list(state["observations"])
     for message in tool_messages:
         content = message.content if isinstance(message.content, str) else str(message.content)
         parsed = ToolObservation.model_validate_json(content)
         trace.append(f"observation: {parsed.tool_name}: {parsed.result}")
 
+        args = {}
+        if isinstance(messages[last_ai_index], AIMessage):
+            calls = messages[last_ai_index].tool_calls
+            if calls:
+                args = calls[-1]["args"]
+        short = parsed.result[:180]
+        record = f"{parsed.tool_name} {args} => {short}"
+
+        tool_results.append(record)
+        observations.append(f"{parsed.tool_name}: {short}")
+    
+    tool_results = tool_results[-5:]
+    observations = observations[-5:]
+
+    trace.append(
+        f"state: tool_results={tool_results} notes={tool_results} done_criteria={state['done_criteria']}"
+    )
+
     return {
+        "tool_results": tool_results,
+        "observations": observations,
+        "notes": tool_results[:],
         "last_tool_name": parsed.tool_name,
         "last_observation": parsed.model_dump_json(),
         "trace": trace,
@@ -99,8 +149,21 @@ def planner_node(state: AgentState) -> dict:
     ])
     plan_content = response.content
     plan = plan_content.strip() if isinstance(plan_content, str) else str(plan_content).strip()
+
+    response = get_llm().invoke([
+        SystemMessage(content=prompts.DONE_CRITERIA_SYSTEM),
+        HumanMessage(content=state["goal"]),
+    ])
+    done_criteria_content = response.content
+    done_criteria = [
+        line.strip(" -\t")
+        for line in str(done_criteria_content).splitlines()
+        if line.strip()
+    ][:4]
+
     return {
         "plan": plan,
         "messages": [HumanMessage(content=state["goal"])],
-        "trace": [f"plan: {plan}"],
+        "trace": [f"plan: {plan}", f"done_criteria: {done_criteria}"],
+        "done_criteria": done_criteria,
     }
