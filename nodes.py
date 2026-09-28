@@ -7,7 +7,7 @@ import logging
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 import prompts
-from schemas import AgentState
+from schemas import AgentState, StopReason
 from settings import get_llm
 from tools import TOOLS, ToolObservation
 
@@ -33,7 +33,26 @@ def _is_successful_repeat(signature: str, tool_results: list[str]) -> bool:
     return False
 
 
+def _no_progress(tool_results: list[str]) -> bool:
+    if len(tool_results) < 2:
+        return False
+    prev, last = tool_results[-2], tool_results[-1]
+    same_call = prev.split("=>", 1)[0] == last.split("=>", 1)[0]
+    same_result = prev.split("=>", 1)[-1].strip() == last.split("=>", 1)[-1].strip()
+    return same_call or same_result
+
+
 def actor_node(state: AgentState) -> dict:
+    if state["stop_reason"]:
+        return {}
+
+    if state["current_step"] >= state["max_steps"]:
+        return {
+            "stop_reason": StopReason.MAX_STEPS,
+            "final_answer": state["final_answer"] or "Остановлено: достигнут max_steps.",
+            "trace": state["trace"] + ["stop: max_steps"],
+        }
+
     system = SystemMessage(content=prompts.ACTOR_SYSTEM.format(
         plan=state["plan"],
         last_observation=state["last_observation"],
@@ -48,23 +67,27 @@ def actor_node(state: AgentState) -> dict:
         call = response.tool_calls[0]
         signature = _call_signature(call["name"], call["args"])
         if _is_successful_repeat(signature, state["tool_results"]):
-            response = AIMessage(
-                content=(
-                    "Этот вызов уже есть в notes. Ответь по сохранённым фактам: "
-                    + " | ".join(state["notes"])
-                )
+            action = (
+                "Остановлено: повтор шага без нового результата. "
+                + " | ".join(state["notes"])
             )
-            action = response.content
-        else:
-            action = signature
+            return {
+                "messages": [AIMessage(content=action)],
+                "current_step": state["current_step"] + 1,
+                "final_answer": action,
+                "stop_reason": StopReason.NO_PROGRESS,
+                "trace": state["trace"] + [f"action: {signature}", "stop: no_progress"],
+            }
+        action = signature
     else:
         content = response.content
         action = content.strip() if isinstance(content, str) else str(content)
-        
+
+    trace = state["trace"] + [f"action: {action}"]
     update = {
         "messages": [response],
         "current_step": state["current_step"] + 1,
-        "trace": state["trace"] + [f"action: {action}"],
+        "trace": trace,
     }
 
     if not getattr(response, "tool_calls", None):
@@ -72,6 +95,8 @@ def actor_node(state: AgentState) -> dict:
         if not isinstance(content, str):
             content = str(content)
         update["final_answer"] = content.strip()
+        update["stop_reason"] = StopReason.FINAL_ANSWER
+        update["trace"] = trace + ["stop: final_answer"]
 
     return update
 
@@ -111,9 +136,44 @@ def observe_node(state: AgentState) -> dict:
         short = parsed.result[:180]
         record = f"{parsed.tool_name} {args} => {short}"
 
+        result_text = parsed.result.strip()
+        failed = result_text.startswith("error")
+        same_error = (
+            failed
+            and state["tool_results"]
+            and state["tool_results"][-1].split("=>", 1)[-1].strip() == result_text[:180]
+        )
         tool_results.append(record)
         observations.append(f"{parsed.tool_name}: {short}")
-    
+        tool_results = tool_results[-5:]
+        observations = observations[-5:]
+
+        if same_error:
+            trace.append("stop: tool_error")
+            return {
+                "tool_results": tool_results,
+                "observations": observations,
+                "notes": tool_results[:],
+                "last_tool_name": parsed.tool_name,
+                "last_observation": parsed.model_dump_json(),
+                "stop_reason": StopReason.TOOL_ERROR,
+                "final_answer": f"Остановлено: повтор ошибки инструмента. {result_text}",
+                "trace": trace,
+            }
+
+        if _no_progress(tool_results):
+            trace.append("stop: no_progress")
+            return {
+                "tool_results": tool_results,
+                "observations": observations,
+                "notes": tool_results[:],
+                "last_tool_name": parsed.tool_name,
+                "last_observation": parsed.model_dump_json(),
+                "stop_reason": StopReason.NO_PROGRESS,
+                "final_answer": "Остановлено: повтор шага без нового результата.",
+                "trace": trace,
+            }
+
     tool_results = tool_results[-5:]
     observations = observations[-5:]
 
@@ -132,10 +192,8 @@ def observe_node(state: AgentState) -> dict:
 
 
 def should_continue(state: AgentState) -> str:
-    """Route: call tools, stop on step limit, or finish."""
-    if state["current_step"] >= state["max_steps"]:
+    if state["stop_reason"]:
         return "end"
-
     last = state["messages"][-1] if state["messages"] else None
     if isinstance(last, AIMessage) and last.tool_calls:
         return "tools"
