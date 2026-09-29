@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from pydantic import ValidationError
 
 import prompts
 from schemas import AgentState, StopReason
@@ -31,6 +32,19 @@ def _is_successful_repeat(signature: str, tool_results: list[str]) -> bool:
         if not result.startswith("error"):
             return True
     return False
+
+
+def _parse_observation(message: ToolMessage, content: str) -> ToolObservation:
+    try:
+        return ToolObservation.model_validate_json(content)
+    except ValidationError:
+        text = content.strip()
+        if not text.startswith("error"):
+            text = f"error: {text}"
+        return ToolObservation(
+            tool_name=getattr(message, "name", None) or "unknown",
+            result=text,
+        )
 
 
 def _no_progress(tool_results: list[str]) -> bool:
@@ -125,7 +139,7 @@ def observe_node(state: AgentState) -> dict:
     observations = list(state["observations"])
     for message in tool_messages:
         content = message.content if isinstance(message.content, str) else str(message.content)
-        parsed = ToolObservation.model_validate_json(content)
+        parsed = _parse_observation(message, content)
         trace.append(f"observation: {parsed.tool_name}: {parsed.result}")
 
         args = {}
