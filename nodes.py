@@ -5,14 +5,22 @@ from __future__ import annotations
 import logging
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from pydantic import ValidationError
 
 import prompts
 from schemas import AgentState, StopReason
 from settings import get_llm
+from langgraph.prebuilt import ToolNode
+
 from tools import TOOLS, ToolObservation
 
 logger = logging.getLogger(__name__)
+
+
+def _node(name: str) -> str:
+    logger.info("node: %s", name)
+    return f"node: {name}"
 
 
 def _llm_with_tools():
@@ -64,7 +72,7 @@ def actor_node(state: AgentState) -> dict:
         return {
             "stop_reason": StopReason.MAX_STEPS,
             "final_answer": state["final_answer"] or "Остановлено: достигнут max_steps.",
-            "trace": state["trace"] + ["stop: max_steps"],
+            "trace": state["trace"] + [_node("actor"), "stop: max_steps"],
         }
 
     system = SystemMessage(content=prompts.ACTOR_SYSTEM.format(
@@ -90,14 +98,14 @@ def actor_node(state: AgentState) -> dict:
                 "current_step": state["current_step"] + 1,
                 "final_answer": action,
                 "stop_reason": StopReason.NO_PROGRESS,
-                "trace": state["trace"] + [f"action: {signature}", "stop: no_progress"],
+                "trace": state["trace"] + [_node("actor"), f"action: {signature}", "stop: no_progress"],
             }
         action = signature
     else:
         content = response.content
         action = content.strip() if isinstance(content, str) else str(content)
 
-    trace = state["trace"] + [f"action: {action}"]
+    trace = state["trace"] + [_node("actor"), f"action: {action}"]
     update = {
         "messages": [response],
         "current_step": state["current_step"] + 1,
@@ -133,7 +141,7 @@ def observe_node(state: AgentState) -> dict:
     if not tool_messages:
         return {}
 
-    trace = list(state["trace"])
+    trace = list(state["trace"]) + [_node("state_updater")]
     parsed = None
     tool_results = list(state["tool_results"])
     observations = list(state["observations"])
@@ -205,6 +213,15 @@ def observe_node(state: AgentState) -> dict:
     }
 
 
+def tools_node(state: AgentState, config: RunnableConfig) -> dict:
+    line = _node("tools")
+    update = ToolNode(TOOLS).invoke(state, config)
+    if not isinstance(update, dict):
+        update = {"messages": update}
+    update["trace"] = state["trace"] + [line]
+    return update
+
+
 def should_continue(state: AgentState) -> str:
     if state["stop_reason"]:
         return "end"
@@ -236,6 +253,6 @@ def planner_node(state: AgentState) -> dict:
     return {
         "plan": plan,
         "messages": [HumanMessage(content=state["goal"])],
-        "trace": [f"plan: {plan}", f"done_criteria: {done_criteria}"],
+        "trace": [_node("planner"), f"plan: {plan}", f"done_criteria: {done_criteria}"],
         "done_criteria": done_criteria,
     }

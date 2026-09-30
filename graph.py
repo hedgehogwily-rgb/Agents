@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import ToolNode
 
-from nodes import planner_node, observe_node, should_continue, actor_node
+from nodes import actor_node, observe_node, planner_node, should_continue, tools_node
 from schemas import AgentState
-from tools import TOOLS
 
 
 def build_graph():
@@ -13,7 +11,7 @@ def build_graph():
     graph = StateGraph(AgentState)
     graph.add_node("planner", planner_node)
     graph.add_node("actor", actor_node)
-    graph.add_node("tools", ToolNode(TOOLS))
+    graph.add_node("tools", tools_node)
     graph.add_node("state_updater", observe_node)
 
     graph.add_edge(START, "planner")
